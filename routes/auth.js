@@ -57,7 +57,7 @@ router.post('/create-account', async (req, res) => {
 
   try {
     // Send verification email
-    await sendEmail(email, 'Verify your account', `<h2>Click this link: ${verifyLink}</h2><br/>This link expires in ${unregisteredUsers / (60 * 1000)} minutes`);
+    await sendEmail(email, 'Verify your account', `<h2>Click this link: <a href="${verifyLink}">${verifyLink}</a></h2><br/>This link expires in ${unregisteredUsers / (60 * 1000)} minutes`);
     res.json({ message: 'Verification email sent', time_left: unregisteredUsers / (60 * 1000) });
   } catch (error) {
     console.error('Failed to send email:', error);
@@ -121,28 +121,27 @@ router.post('/login', async (req, res) => {
   // Store the token in the permanentUsers map
   // const uuid = uuidv4();
   // permanentUsers.set(uuid, { token, timestamp: Date.now() });
-  console.log(token);
-  console.log(user._id);
+  // console.log(token);
+  // console.log(user._id);
 
   // Set the JWT token as a cookie
   // res.;
-
+  user.passwordHash = undefined; // Remove password hash from user object
   res.status(200).cookie("SubjectSwapLoginJWT", token, { 
     httpOnly: true, 
     secure: true, 
-    sameSite: 'none', 
+    sameSite: 'None', 
     maxAge: 30 * 24 * 60 * 60 * 1000, 
     accessControlAllowCredentials: true,
-    secret: process.env.JWT_SECRET,
-    signedCookies: true
-  
-  }).json({ message: 'Logged in successfully', user });
+    path: '/*'
+  }).json({ message: 'Logged in successfully', user, token });
 });
 
-// POST /verify-user
+// POST /verify-user - used to verify the user after login
 router.post('/verify-user', async (req, res) => {
-  console.log(req);
-  const token = req.cookies["SubjectSwapLoginJWT"];
+  // console.log(req);
+  const token = req.cookies.SubjectSwapLoginJWT;
+  // console.log(token);
 
   // Check if the token is provided
   if (!token) {
