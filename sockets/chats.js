@@ -1,5 +1,4 @@
 const jwt = require('jsonwebtoken');
-const { GridFSBucket } = require('mongodb');
 const User = require('../models/User');
 const Conversation = require('../models/Conversation');
 const { getUserOrder, getFromBoolean, getActualSender } = require('../utils/conversationHelpers');
@@ -9,6 +8,7 @@ const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() }); // For in-memory file uploads
 const streamifier = require('streamifier'); // Add this at the top
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 // Configure cloudinary
 cloudinary.config({
@@ -17,13 +17,22 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// Generate server key pair (do this once, outside the function)
+const serverKeyPair = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+});
+
+// In-memory map to store user public keys for this session
+const userPublicKeys = new Map();
+
 function private_chat(io) {
     const private_chat_io = io.of('/private_chat');
 
     // Socket.io connection
     private_chat_io.use((socket, next) => {
         const token = socket.handshake.auth.token;
-        // console.log(socket.handshake);
         if (!token) return next(new Error('Authentication error'));
 
         jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
@@ -36,19 +45,30 @@ function private_chat(io) {
     private_chat_io.on('connection', (socket) => {
         const userId = socket.user.userId;
 
-        socket.on('join_conversation', ({ to }) => {
+        // 1. On join_conversation, receive and store client's public key
+        socket.on('join_conversation', ({ to, publicKey }) => {
             const { usersString } = getUserOrder(userId, to);
             socket.join(usersString);
+            if (publicKey) {
+                userPublicKeys.set(userId, publicKey);
+            }
         });
 
+        // 2. On offline, remove user from room but keep key for session
         socket.on('offline', ({ to }) => {
             const { usersString } = getUserOrder(userId, to);
             socket.leave(usersString);
         });
 
+        // 3. On disconnect, remove user's public key
+        socket.on('disconnect', () => {
+            userPublicKeys.delete(userId);
+        });
+
+        // 4. previous_chats: fetch and encrypt content for this user
         socket.on('previous_chats', async ({ to }) => {
-            const { users, isUser1First, usersString } = getUserOrder(userId, to);
             try {
+                const { users, isUser1First, usersString } = getUserOrder(userId, to);
                 // Fetch all conversations for this participantId, latest first
                 let conversations = await Conversation.find({
                     participantId: usersString
@@ -64,6 +84,7 @@ function private_chat(io) {
                         messages: []
                     });
                     socket.emit('previous_chats', {
+                        server_public_key: serverKeyPair.publicKey,
                         archived: false,
                         chats: []
                     });
@@ -71,11 +92,9 @@ function private_chat(io) {
                 }
 
                 if (conversations.length === 1 || (conversations[0].messages.length > 100)) {
-                    // Only one document or latest has >100 messages
                     selectedConversations = [conversations[0]];
                     archived = conversations.length > 1;
                 } else if (conversations.length >= 2) {
-                    // Merge latest and second latest
                     const merged = {
                         ...conversations[0],
                         messages: [...conversations[0].messages, ...conversations[1].messages]
@@ -84,18 +103,36 @@ function private_chat(io) {
                     archived = true;
                 }
 
-                // Format conversations and add byMe to each message
+                // Encrypt content for each message with user's public key 
+                const clientPublicKey = userPublicKeys.get(userId);
                 const formattedConversations = selectedConversations.map(conversation => {
-                    const formattedMessages = conversation.messages.map(msg => ({
-                        ...msg,
-                        byMe: getActualSender(msg.from, users) === userId,
-                        deleted: msg.type === 'deleted'
-                    }));
-
+                    const formattedMessages = conversation.messages.map(msg => {
+                        let encryptedContent = msg.content;
+                        if (clientPublicKey && msg.content) {
+                            try {
+                                encryptedContent = crypto.publicEncrypt(
+                                    {
+                                        key: clientPublicKey,
+                                        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                                        oaepHash: "sha256"
+                                    },
+                                    Buffer.from(msg.content)
+                                ).toString('base64');
+                            } catch (e) {
+                                encryptedContent = msg.content;
+                            }
+                        }
+                        return {
+                            ...msg,
+                            content: encryptedContent,
+                            byMe: getActualSender(msg.from, users) === userId,
+                            deleted: msg.type === 'deleted'
+                        };
+                    });
                     return formattedMessages;
                 });
-
                 socket.emit('previous_chats', {
+                    server_public_key: serverKeyPair.publicKey,
                     archived,
                     chats: formattedConversations.flat()
                 });
@@ -104,14 +141,25 @@ function private_chat(io) {
             }
         });
 
+        // 5. message_sent: decrypt content, store plain, encrypt for both sender and receiver
         socket.on('message_sent', async ({ to, content, type, filedata }) => {
             const { users, usersString } = getUserOrder(userId, to);
             try {
-                // Find latest conversation for this participantId
-                let conversation = await Conversation.findOne({ participantId: usersString })
-                    .sort({ 'messages.timestamp': -1 });
+                // Decrypt content if encrypted with server public key
+                let plainContent = content;
+                try {
+                    plainContent = crypto.privateDecrypt(
+                        {
+                            key: serverKeyPair.privateKey,
+                            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                            oaepHash: "sha256"
+                        },
+                        Buffer.from(content, 'base64')
+                    ).toString('utf8');
+                } catch (e) {
+                    // Not encrypted, use as is
+                }
 
-                // Prepare message object with ObjectId and timestamp
                 const msgId = new mongoose.Types.ObjectId();
                 let messageObj = {
                     from: getFromBoolean(userId, users),
@@ -121,17 +169,18 @@ function private_chat(io) {
                 };
 
                 if (type === 'text') {
-                    messageObj.content = content;
+                    messageObj.content = plainContent;
                 } else if (type === 'file' && filedata && filedata.buffer && filedata.name) {
-                    // Extract file extension
-                    const ext = filedata.name.split('.').pop();
-                    // Upload file buffer to Cloudinary with extension in public_id
+                    const ext = filedata.name.split('.').pop().toLowerCase();
+                    const isPdf = ext === 'pdf';
+                    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext);
+
                     const uploadFromBuffer = () => {
                         return new Promise((resolve, reject) => {
                             const publicId = `chat_files/${msgId.toString()}.${ext}`;
                             const uploadStream = cloudinary.uploader.upload_stream(
                                 {
-                                    resource_type: 'auto',
+                                    resource_type: isPdf ? 'raw' : (isImage ? 'image' : 'auto'),
                                     public_id: publicId,
                                     use_filename: true,
                                     unique_filename: false,
@@ -145,46 +194,78 @@ function private_chat(io) {
                             streamifier.createReadStream(filedata.buffer).pipe(uploadStream);
                         });
                     };
-
                     const result = await uploadFromBuffer();
                     messageObj.content = result.secure_url;
                     messageObj.type = 'file';
                 }
 
-                let newDoc = false;
+                // Save to DB as before
+                let conversation = await Conversation.findOne({ participantId: usersString })
+                    .sort({ 'messages.timestamp': -1 });
                 if (!conversation || conversation.messages.length >= 1000) {
-                    // Create new conversation document
                     conversation = new Conversation({
                         participantId: usersString,
                         messages: [messageObj],
                         noOfMessages: 1
                     });
-                    newDoc = true;
                 } else {
-                    // Append to existing
                     conversation.messages.push(messageObj);
                     conversation.noOfMessages = (conversation.noOfMessages || 0) + 1;
                 }
                 await conversation.save();
 
-                // Format message for emit
-                const formattedMsg = {
+                // Encrypt content for sender and receiver
+                const senderPublicKey = userPublicKeys.get(userId);
+                const receiverPublicKey = userPublicKeys.get(to);
+
+                let senderMsg = {
                     ...messageObj,
-                    byMe: false, // for receiver
+                    byMe: true,
+                    deleted: messageObj.type === 'deleted'
+                };
+                let receiverMsg = {
+                    ...messageObj,
+                    byMe: false,
                     deleted: messageObj.type === 'deleted'
                 };
 
-                // Emit to sender only
-                socket.emit('message_received', {
-                    ...formattedMsg,
-                    byMe: true
-                });
+                // Encrypt for sender
+                if (senderPublicKey && messageObj.content) {
+                    try {
+                        senderMsg.content = crypto.publicEncrypt(
+                            {
+                                key: senderPublicKey,
+                                padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                                oaepHash: "sha256"
+                            },
+                            Buffer.from(messageObj.content)
+                        ).toString('base64');
+                    } catch (e) {
+                        senderMsg.content = messageObj.content;
+                    }
+                }
 
-                // Emit to all other sockets in the conversation room (receiver)
-                socket.to(usersString).emit('message_received', {
-                    ...formattedMsg,
-                    byMe: false
-                });
+                // Encrypt for receiver
+                if (receiverPublicKey && messageObj.content) {
+                    try {
+                        receiverMsg.content = crypto.publicEncrypt(
+                            {
+                                key: receiverPublicKey,
+                                padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                                oaepHash: "sha256"
+                            },
+                            Buffer.from(messageObj.content)
+                        ).toString('base64');
+                    } catch (e) {
+                        receiverMsg.content = messageObj.content;
+                    }
+                }
+
+                // Emit to sender
+                socket.emit('message_received', senderMsg);
+
+                // Emit to receiver
+                socket.to(usersString).emit('message_received', receiverMsg);
 
             } catch (err) {
                 console.error('Error sending message:', err);
