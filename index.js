@@ -3,13 +3,13 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const cron = require('node-cron');
 const cookieParser = require('cookie-parser');
+const {Server} = require('socket.io');
 
 const {clearUserCache} = require('./utils/clearCache');
 const {minTime} = require('./constants/cronJobTimers');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-app.set('trust proxy', 1);
 app.use(cookieParser());
 app.use(express.json());
 app.use(cors({
@@ -19,7 +19,9 @@ app.use(cors({
 }));
 
 const authRoutes = require('./routes/auth');
+const chatRoutes = require('./routes/chat_routes');
 app.use('/', authRoutes);
+app.use('/chat', chatRoutes);
 
 cron.schedule(`*/${(minTime / 60) / 1000} * * * *`, () => {
   clearUserCache();
@@ -28,6 +30,8 @@ cron.schedule(`*/${(minTime / 60) / 1000} * * * *`, () => {
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected');
-    app.listen(process.env.PORT || 3000, () => console.log('Server running'));
+    const server = app.listen(process.env.PORT || 3000, () => console.log('Server running'));
+    const io = new Server(server);
+    require('./sockets/chats')(io);
   })
   .catch(err => console.error(err));

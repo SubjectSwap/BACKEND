@@ -34,7 +34,7 @@ router.post('/create-account', async (req, res) => {
 
   try {
     // Check if email already exists in the database
-    existingUser = await User.findOne({ email }).exec();
+    existingUser = await User.findOne({ email, active: true }).exec();
   } catch (error) {
     console.error('Database error:', error);
     return res.status(500).json({ message: 'Database error occurred' });
@@ -99,7 +99,7 @@ router.post('/login', async (req, res) => {
   let user;
   try {
     // Find the user by email
-    user = await User.findOne({ email }).exec();
+    user = await User.findOne({ email, active: true }).exec();
   } catch (error) {
     console.error('Database error:', error);
     return res.status(500).json({ message: 'Database error occurred' });
@@ -118,15 +118,9 @@ router.post('/login', async (req, res) => {
   // Generate a JWT token
   const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
-  // Store the token in the permanentUsers map
-  // const uuid = uuidv4();
-  // permanentUsers.set(uuid, { token, timestamp: Date.now() });
-  // console.log(token);
-  // console.log(user._id);
-
-  // Set the JWT token as a cookie
-  // res.;
   user.passwordHash = undefined; // Remove password hash from user object
+  user.email = undefined; // Remove email from user object for security
+  user._id = null; // Remove _id from user object for security
   res.status(200).cookie("SubjectSwapLoginJWT", token, { 
     httpOnly: true, 
     secure: true, 
@@ -158,7 +152,9 @@ router.post('/verify-user', async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-
+    user.passwordHash = undefined; // Remove password hash from user object
+    user._id = null; // Remove _id from user object for security
+    user.email = undefined; // Remove email from user object for security
     // Return the user object with a success message
     res.json({ message: 'User verified successfully', user });
   } catch (error) {
