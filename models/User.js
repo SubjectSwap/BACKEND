@@ -8,12 +8,13 @@ const userSchema = new mongoose.Schema({
   description: String,
   languages: [String],
   teachingSubjects: [{
-    subjectId: mongoose.Schema.Types.ObjectId,
+    subjectVector: [Number],
     selfRating: Number,
     noOfRatings: Number,
-    totalReceivedRatings: Number
+    totalReceivedRatings: Number,
+    active: { type: Boolean, default: true }
   }],
-  learningSubjects: [mongoose.Schema.Types.ObjectId],
+  learningSubjects: [String],
   personalityRating: {
     average: Number,
     totalRatings: Number
