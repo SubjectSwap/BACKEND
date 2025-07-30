@@ -7,6 +7,21 @@ const { tempUsers, permanentUsers } = require('../cache/tempUsers');
 const sendEmail = require('../utils/sendEmail');
 const jwt = require('jsonwebtoken');
 const { signedCookies } = require('cookie-parser');
+const multer = require('multer'); // multer middleware for handling multipart/form-data (image upload)
+const path = require('path'); // path module for handling file paths
+
+
+//Multer setup for image upload
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // folder to save uploaded images
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname)); // unique filename with extension
+  }
+});
+const upload = multer({ storage: storage }); // multer instance configured with storage
+
 
 // Email validation regex
 const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
@@ -163,4 +178,90 @@ router.post('/verify-user', async (req, res) => {
   }
 });
 
+//FORGET PASSWORD
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) return res.status()
+  const user = await User.findOne({ email });
+
+  if (!user) return res.status(404).json({ message: 'User not found' });
+
+  const resetToken = uuidv4();
+  user.resetToken = resetToken;
+  user.resetTokenExpiry = Date.now() + 1000 * 60 * 15; // 15 min
+  await user.save();
+
+  const resetLink = `http://localhost:3000/reset-password/${resetToken}`;
+
+  await sendEmail(email, 'Reset your password', `Click to reset: ${resetLink}`);
+  res.json({ message: 'Password reset link sent' });
+});
+
+// POST /reset-password/:token
+router.post('/reset-password/:token', async (req, res) => {
+  const { token } = req.params;
+  const { newPassword } = req.body;
+
+  const user = await User.findOne({
+    resetToken: token,
+    resetTokenExpiry: { $gt: Date.now() }
+  });
+
+  if (!user) return res.status(400).json({ message: 'Invalid or expired token' });
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  user.passwordHash = hashedPassword;
+  user.resetToken = undefined;
+  user.resetTokenExpiry = undefined;
+  await user.save();
+
+  res.json({ message: 'Password reset successful' });
+});
+
+/ PUT /edit-profile
+// Note: Add authentication middleware as needed
+router.put('/edit-profile', upload.single('profilePic'), async (req, res) => {
+  try {
+    // Placeholder for user authentication
+    // const userId = req.user.id; // Assuming user ID is available after auth middleware
+    const userId = req.body.userId; // For now, get userId from request body for demo
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' }); // userId validation
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' }); // user existence check
+
+    // Update user info fields if provided
+    const { username, description, languages } = req.body;
+    if (username) user.username = username; // update username
+    if (description) user.description = description; // update description
+    if (languages) {
+      if (typeof languages === 'string') {
+        // If languages is a JSON string, parse it
+        try {
+          user.languages = JSON.parse(languages);
+        } catch {
+          user.languages = languages.split(',').map(lang => lang.trim()); // parse comma separated string
+        }
+      } else if (Array.isArray(languages)) {
+        user.languages = languages; // update languages array
+      }
+    }
+
+    // Update profilePicUrl if image uploaded
+    if (req.file) {
+      user.profilePicUrl = `/uploads/${req.file.filename}`; // save uploaded image path
+    }
+
+    await user.save(); // save updated user document
+
+    res.json({ message: 'Profile updated successfully', user }); // success response
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' }); // error handling
+  }
+});
 module.exports = router;
