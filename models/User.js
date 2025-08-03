@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema({
   languages: [String],
   teachingSubjects: [{
     subjectVector: [Number],
+    subjectName: String,
     selfRating: Number,
     noOfRatings: Number,
     totalReceivedRatings: Number,
@@ -19,7 +20,18 @@ const userSchema = new mongoose.Schema({
     average: Number,
     totalRatings: Number
   },
-  active: { type: Boolean, default: true }
+  active: { type: Boolean, default: true },
+  pleopleIRated: [
+    {
+      type:{
+        type: String,
+        enum: ['personality', 'subject'], // enforce enum constraint
+        required: true
+      },
+      rating: Number,
+      to: mongoose.Schema.Types.ObjectId
+    }
+  ]
 });
 
 module.exports = mongoose.model('User', userSchema);

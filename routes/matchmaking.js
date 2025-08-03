@@ -33,6 +33,7 @@ router.post('/match', tempMiddleWare, async (req, res) => {
     const wantVector = unitSubjectVectorEmbeddings[wantSubject];
     if (!wantVector) return res.status(400).json({ message: "No matching subject found" });
 
+    // Business Logic
     try {
         const users = await User.aggregate([
             { $match: { active: true, _id: { $ne: object_userId } } },
@@ -172,14 +173,15 @@ router.post('/match', tempMiddleWare, async (req, res) => {
             }}
         ]);
 
+        // No more required
         // Give each subject a name.
-        users.forEach(user => {
-            if (user.teachingSubjects && user.teachingSubjects.length > 0) {
-                user.teachingSubjects.forEach(subject => {
-                    mapSubjectToName(subject);
-                });
-            }
-        });
+        // users.forEach(user => {
+        //     if (user.teachingSubjects && user.teachingSubjects.length > 0) {
+        //         user.teachingSubjects.forEach(subject => {
+        //             mapSubjectToName(subject);
+        //         });
+        //     }
+        // });
 
         res.status(200).json({ users });
     } catch (err) {

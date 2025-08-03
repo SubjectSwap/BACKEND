@@ -47,6 +47,11 @@ function private_chat(io) {
 
         // 1. On join_conversation, receive and store client's public key
         socket.on('join_conversation', ({ to, publicKey }) => {
+            if (to==socket.user.userId) {
+                socket.emit("cantConnectWithSelf");
+                socket.disconnect(true);
+                return;
+            }
             const { usersString } = getUserOrder(userId, to);
             socket.join(usersString);
             if (publicKey) {
@@ -67,6 +72,11 @@ function private_chat(io) {
 
         // 4. previous_chats: fetch and encrypt content for this user
         socket.on('previous_chats', async ({ to }) => {
+            if (to==socket.user.userId) {
+                socket.emit("cantConnectWithSelf");
+                socket.disconnect(true);
+                return;
+            }
             try {
                 const { users, isUser1First, usersString } = getUserOrder(userId, to);
                 // Fetch all conversations for this participantId, latest first
@@ -143,6 +153,11 @@ function private_chat(io) {
 
         // 5. message_sent: decrypt content, store plain, encrypt for both sender and receiver
         socket.on('message_sent', async ({ to, content, type, filedata }) => {
+            if (to==socket.user.userId) {
+                socket.emit("cantConnectWithSelf");
+                socket.disconnect(true);
+                return;
+            }
             const { users, usersString } = getUserOrder(userId, to);
             try {
                 // Decrypt content if encrypted with server public key

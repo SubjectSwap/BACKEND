@@ -219,7 +219,7 @@ router.post('/reset-password/:token', async (req, res) => {
   res.json({ message: 'Password reset successful' });
 });
 
-/ PUT /edit-profile
+// PUT /edit-profile
 // Note: Add authentication middleware as needed
 router.put('/edit-profile', upload.single('profilePic'), async (req, res) => {
   try {
