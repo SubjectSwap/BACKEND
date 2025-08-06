@@ -21,9 +21,11 @@ app.use(cors({
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat_routes');
 const matchMakingRoutes = require('./routes/matchmaking');
+const searchRoutes = require('./routes/search');
 app.use('/', authRoutes);
 app.use('/chat', chatRoutes);
 app.use('/matchmaking', matchMakingRoutes);
+app.use('/search', searchRoutes);
 
 cron.schedule(`*/${(minTime / 60) / 1000} * * * *`, () => {
   clearUserCache();
