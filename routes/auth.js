@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const cloudinary = require('cloudinary').v2;
+const streamifier = require('streamifier'); // Add this at the top
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { tempUsers, permanentUsers } = require('../cache/tempUsers');
@@ -9,6 +11,8 @@ const jwt = require('jsonwebtoken');
 const { signedCookies } = require('cookie-parser');
 const multer = require('multer'); // multer middleware for handling multipart/form-data (image upload)
 const path = require('path'); // path module for handling file paths
+const {IncorrectProfilePicFileType} = require('../errors/incorrect_profilepic_file_type_error');
+const {unitSubjectVectorEmbeddings} = require('../constants/vectorEmbeddings');
 
 
 //Multer setup for image upload
@@ -21,6 +25,12 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage: storage }); // multer instance configured with storage
+// Configure cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 
 // Email validation regex
@@ -192,9 +202,9 @@ router.post('/forgot-password', async (req, res) => {
   user.resetTokenExpiry = Date.now() + 1000 * 60 * 15; // 15 min
   await user.save();
 
-  const resetLink = `http://localhost:3000/reset-password/${resetToken}`;
+  const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-  await sendEmail(email, 'Reset your password', `Click to reset: ${resetLink}`);
+  await sendEmail(email, 'Reset your password', `<h2>Click to reset: <a href="${resetLink}">${resetLink}</a></h2><br />This link expires in 15 minutes.`);
   res.json({ message: 'Password reset link sent' });
 });
 
@@ -221,12 +231,18 @@ router.post('/reset-password/:token', async (req, res) => {
 
 // PUT /edit-profile
 // Note: Add authentication middleware as needed
-router.put('/edit-profile', upload.single('profilePic'), async (req, res) => {
+router.put('/edit-profile', async (req, res) => {
   try {
     // Placeholder for user authentication
     // const userId = req.user.id; // Assuming user ID is available after auth middleware
-    const userId = req.body.userId; // For now, get userId from request body for demo
-
+    const token = req.cookies.SubjectSwapLoginJWT; // For now, get userId from request body for demo
+    let userId;
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) =>{
+      if (err) {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+      userId = decoded.userId;
+    });
     if (!userId) {
       return res.status(400).json({ error: 'User ID is required' }); // userId validation
     }
@@ -235,7 +251,7 @@ router.put('/edit-profile', upload.single('profilePic'), async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' }); // user existence check
 
     // Update user info fields if provided
-    const { username, description, languages } = req.body;
+    const { username, description, languages, learningSubjects, teachingSubjects, fileObject } = req.body;
     if (username) user.username = username; // update username
     if (description) user.description = description; // update description
     if (languages) {
@@ -250,10 +266,82 @@ router.put('/edit-profile', upload.single('profilePic'), async (req, res) => {
         user.languages = languages; // update languages array
       }
     }
+    user.learningSubjects = learningSubjects; // update learningSubjects
+    // update teaching subjects. teachingSubjects has the schema [{subjectName: String, subjectRating: Number}]
+    // But first we need to go though all existing subjects in user.teachingSubjects teachingSubjects: [{
+  //   subjectVector: [Number],
+  //   subjectName: String,
+  //   selfRating: Number,
+  //   noOfRatings: Number, // Total no of ratings
+  //   totalReceivedRatings: Number, // Sum of all ratings
+  //   active: { type: Boolean, default: true }
+  // }]
+    // If a subject.subjectName is present in teachingSubjects, set subject.active: true, subject.selfRating: teachingSubjects.subject.subjectRating.
+    // If a subject.subjectName is not present in teachingSubjects, set subject.active: false
+    // If a subject is present in teachingSubjects but not in user.teachingSubjects, append {
+  //    subjectName: teachingSubjects.subject.subjectName,
+  //    subjectVector: unitSubjectVectorEmbeddings[teachingSubjects.subject.subjectName],
+  //    selfRating: teachingSubjects.subject.subjectRating,
+  //    noOfRatings: 0,
+  //    totalReceivedRatings: 0,
+  //    active: true
+  //}
+    // If a subject is present in user.teachingSubjects but not in teachingSubjects, set subject.active: false
+
+    user.teachingSubjects = user.teachingSubjects.map(subject => {
+      const teachingSubject = teachingSubjects.find(teachingSubject => teachingSubject.subjectName === subject.subjectName);
+      if (teachingSubject) {
+        subject.active = true;
+        subject.selfRating = teachingSubject.subjectRating;
+      } else {
+        subject.active = false;
+      }
+      return subject;
+    })
+    // Append new subjects if they are not present in user.teachingSubjects
+    teachingSubjects.forEach(teachingSubject => {
+      const existingSubject = user.teachingSubjects.find(subject => subject.subjectName === teachingSubject.subjectName);
+      if (!existingSubject) {
+        user.teachingSubjects.push({
+          subjectName: teachingSubject.subjectName,
+          subjectVector: unitSubjectVectorEmbeddings[teachingSubject.subjectName],
+          selfRating: teachingSubject.selfRating,
+          noOfRatings: 0,
+          totalReceivedRatings: 0,
+          active: true
+        });
+      }
+    });
 
     // Update profilePicUrl if image uploaded
-    if (req.file) {
-      user.profilePicUrl = `/uploads/${req.file.filename}`; // save uploaded image path
+    if (fileObject) {
+      const ext = fileObject.filedata.name.split('.').pop().toLowerCase();
+      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(ext);
+
+      // If not an image
+      if (!isImage) throw new IncorrectProfilePicFileType();
+      const uuid = uuidv4();
+      const uploadFromBuffer = () => {
+          return new Promise((resolve, reject) => {
+              const publicId = `profile_pic/${uuid}.${ext}`;
+              const uploadStream = cloudinary.uploader.upload_stream(
+                  {
+                      resource_type: 'image',
+                      public_id: publicId,
+                      use_filename: true,
+                      unique_filename: false,
+                      overwrite: true
+                  },
+                  (error, result) => {
+                      if (error) return reject(error);
+                      resolve(result);
+                  }
+              );
+              streamifier.createReadStream(fileObject.buffer).pipe(uploadStream);
+          });
+      };
+      const result = await uploadFromBuffer();
+      user.profilePicUrl = result.secure_url; // save uploaded image path
     }
 
     await user.save(); // save updated user document

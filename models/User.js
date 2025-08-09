@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true },
   passwordHash: String,
   profilePicUrl: { type: String, default: null },
-  description: String,
+  description: { type: String, default: null },
   languages: [String],
   teachingSubjects: [{
     subjectVector: [Number],
