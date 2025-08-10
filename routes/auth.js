@@ -235,12 +235,8 @@ router.put('/edit-profile', async (req, res) => {
     // const userId = req.user.id; // Assuming user ID is available after auth middleware
     const token = req.cookies.SubjectSwapLoginJWT; // For now, get userId from request body for demo
     let userId;
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) =>{
-      if (err) {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-      userId = decoded.userId;
-    });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);    
+    userId = decoded.userId;
     if (!userId) {
       return res.status(400).json({ error: 'User ID is required' }); // userId validation
     }
