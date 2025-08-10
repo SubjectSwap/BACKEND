@@ -22,10 +22,12 @@ const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat_routes');
 const matchMakingRoutes = require('./routes/matchmaking');
 const searchRoutes = require('./routes/search');
+const ratingRoutes = require('./routes/rating_routes');
 app.use('/', authRoutes);
 app.use('/chat', chatRoutes);
 app.use('/matchmaking', matchMakingRoutes);
 app.use('/search', searchRoutes);
+app.use('/rating_routes', ratingRoutes);
 
 cron.schedule(`*/${(minTime / 60) / 1000} * * * *`, () => {
   clearUserCache();

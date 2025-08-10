@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const User = require('../models/User');
+const mongoose = require('mongoose');
 
 router.post('/person', async (req, res) => {
     try {
@@ -62,6 +63,19 @@ router.post('/person', async (req, res) => {
         res.status(500).json({message: 'Search operation failed'});
     }
 });
+
+router.post('/user/:uuid', async (req, res) => {
+    const userId = req.params.uuid;
+    if (!userId) return res.status(400).json({message: 'No user provided'});
+    try{
+        const user = await User.findOne({_id: new mongoose.Types.ObjectId(userId), active: true}, {username: 1, profilePicUrl: 1, teachingSubjects: 1, learningSubjects: 1, personalityRating: 1, languages: 1});
+        if(!user) return res.status(404).json({message: 'User not found'});
+        res.status(200).json(user);
+    }catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({message: 'Search operation failed'});
+    }
+})
 
 
 module.exports = router;

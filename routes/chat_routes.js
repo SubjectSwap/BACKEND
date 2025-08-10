@@ -23,16 +23,16 @@ const tempMiddleWare = (req, res, next) => {
 router.post('/previous_chats', tempMiddleWare, async (req, res) => {
     try {
         const userId = req.user.userId;
-
+        
         // Fetch all conversations where participantId contains userId
         const conversations = await Conversation.find({
             participantId: { $regex: userId }
         }).lean();
-
+        // console.log("Checkpoint -2")
         if (!conversations || conversations.length === 0) {
             return res.status(200).json([]);
         }
-
+        // console.log("Checkpoint -1")
         // Filter out documents with repeating participantId
         const uniqueMap = {};
         conversations.forEach(conv => {
@@ -40,27 +40,28 @@ router.post('/previous_chats', tempMiddleWare, async (req, res) => {
                 uniqueMap[conv.participantId] = conv;
             }
         });
+        // console.log("Checkpoint 0")
         const uniqueConversations = Object.values(uniqueMap);
-
+        // console.log("Checkpoint 1")
         // Extract otherId from participantId
         const otherIds = uniqueConversations.map(conv => {
             const [id1, id2] = conv.participantId.split('_');
             return id1 === userId ? id2 : id1;
         });
-
+        // console.log("Checkpoint 1.5");
         // Fetch user details for otherIds
         const users = await User.find({ _id: { $in: otherIds }, active: true }, '_id username profilePicUrl').lean();
-
+        // console.log("Checkpoint 2")
         // Map users to objects
         const userList = users.map(u => ({
             convo_id: u._id,
             name: u.username,
             profilePic: u.profilePicUrl
         }));
-
+        // console.log("Checkpoint 3")
         return res.status(200).json(userList);
     } catch (err) {
-        console.error('Error in /previous_chats:', err);
+        // console.error('Error in /previous_chats:', err);
         return res.status(500).json({ error: 'Internal server error' });
     }
 });

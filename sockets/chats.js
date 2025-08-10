@@ -52,6 +52,18 @@ function private_chat(io) {
                 socket.disconnect(true);
                 return;
             }
+            try{
+                const isUserToRealChecker = User.findById(new mongoose.Types.ObjectId(to));
+                if(!isUserToRealChecker) {
+                    socket.emit("failedConnection");
+                    socket.disconnect(true);
+                    return;
+                }
+            } catch(e){
+                socket.emit("failedConnection");
+                socket.disconnect(true);
+                return;
+            }
             const { usersString } = getUserOrder(userId, to);
             socket.join(usersString);
             if (publicKey) {

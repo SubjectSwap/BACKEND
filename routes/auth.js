@@ -145,7 +145,6 @@ router.post('/login', async (req, res) => {
 
   user.passwordHash = undefined; // Remove password hash from user object
   user.email = undefined; // Remove email from user object for security
-  user._id = null; // Remove _id from user object for security
   res.status(200).cookie("SubjectSwapLoginJWT", token, { 
     httpOnly: true, 
     secure: true, 
@@ -178,7 +177,6 @@ router.post('/verify-user', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     user.passwordHash = undefined; // Remove password hash from user object
-    user._id = null; // Remove _id from user object for security
     user.email = undefined; // Remove email from user object for security
     // Return the user object with a success message
     res.json({ message: 'User verified successfully', user });
@@ -288,11 +286,11 @@ router.put('/edit-profile', async (req, res) => {
   //}
     // If a subject is present in user.teachingSubjects but not in teachingSubjects, set subject.active: false
 
-    user.teachingSubjects = user.teachingSubjects.map(subject => {
+    user.teachingSubjects = user.teachingSubjects.map((subject, index) => {
       const teachingSubject = teachingSubjects.find(teachingSubject => teachingSubject.subjectName === subject.subjectName);
       if (teachingSubject) {
         subject.active = true;
-        subject.selfRating = teachingSubject.subjectRating;
+        subject.selfRating = teachingSubject.selfRating;
       } else {
         subject.active = false;
       }

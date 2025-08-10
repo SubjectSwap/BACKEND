@@ -22,10 +22,10 @@ const userSchema = new mongoose.Schema({
   learningSubjects: [String],
   personalityRating: {
     average: Number, // Not really an average, just the sum of all ratings
-    totalRatings: Number // Total no of ratings
+    totalRatings: Number // Total no of ratings (people who rated)
   },
   active: { type: Boolean, default: true },
-  pleopleIRated: [
+  peopleIRated: [
     {
       type:{
         type: String,
@@ -33,7 +33,8 @@ const userSchema = new mongoose.Schema({
         required: true
       },
       rating: Number,
-      to: mongoose.Schema.Types.ObjectId
+      to: mongoose.Schema.Types.ObjectId,
+      subjectName: String
     }
   ]
 });
