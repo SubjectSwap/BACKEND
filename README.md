@@ -1,11 +1,11 @@
-# SubjectSwap — BACKEND README
+# SubjectSwap — BACKEND
 
 > This README documents the Express backend for **SubjectSwap** (currently deployed on: <a href="https://subjectswap-backend.onrender.com">`https://subjectswap-frontend.onrender.com`</a>).
 > It explains API endpoints grouped by category, data models, socket/live-chat design (including encrypted tunneling), folder structure, and notable design decisions.  
-For general evaluation repository
-<a href="https://github.com/SubjectSwap/SubjectSwap/">`https://githhttps://github.com/SubjectSwap/SubjectSwap/`</a>  
-For frontend repository
-<a href="https://github.com/SubjectSwap/FRONTEND/">`https://githhttps://github.com/SubjectSwap/FRONTEND/`</a>
+> For general evaluation repository
+<a href="https://github.com/SubjectSwap/SubjectSwap/">`https://github.com/SubjectSwap/SubjectSwap/`</a>  
+> For frontend repository
+<a href="https://github.com/SubjectSwap/FRONTEND/">`https://github.com/SubjectSwap/FRONTEND/`</a>
 ---
 
 ## Table of contents
