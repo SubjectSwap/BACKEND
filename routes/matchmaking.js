@@ -10,7 +10,8 @@ function dot(a, b) {
     return a.reduce((sum, v, i) => sum + v * b[i], 0);
 }
 const tempMiddleWare = async (req, res, next) =>{
-    const token = req.cookies["SubjectSwapLoginJWT"];
+    // const token = req.cookies["SubjectSwapLoginJWT"];
+    const {token} = req.body;
     if (!token) return res.status(401).json({ message: 'Not logged in' });
     await jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
         if (err) return res.status(403).json({ message: 'Invalid token' });

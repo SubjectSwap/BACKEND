@@ -7,7 +7,8 @@ const { getUserOrder } = require('../utils/conversationHelpers');
 const { default: mongoose } = require('mongoose');
 
 const tempMiddleWare = (req, res, next) => {
-    const userId = req.cookies["SubjectSwapLoginJWT"];
+    // const userId = req.cookies["SubjectSwapLoginJWT"];
+    const userId = req.body?.token;
     if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
     }

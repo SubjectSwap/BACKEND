@@ -158,8 +158,8 @@ router.post('/login', async (req, res) => {
 // POST /verify-user - used to verify the user after login
 router.post('/verify-user', async (req, res) => {
   // console.log(req);
-  const token = req.cookies.SubjectSwapLoginJWT;
-  // console.log(token);
+  // const token = req.cookies.SubjectSwapLoginJWT;
+  const token = req.body?.token;
 
   // Check if the token is provided
   if (!token) {
@@ -233,7 +233,8 @@ router.put('/edit-profile', async (req, res) => {
   try {
     // Placeholder for user authentication
     // const userId = req.user.id; // Assuming user ID is available after auth middleware
-    const token = req.cookies.SubjectSwapLoginJWT; // For now, get userId from request body for demo
+    // const token = req.cookies.SubjectSwapLoginJWT; // For now, get userId from request body for demo
+    const {token} = req.body;
     let userId;
     const decoded = jwt.verify(token, process.env.JWT_SECRET);    
     userId = decoded.userId;
