@@ -103,7 +103,7 @@ router.post('/verify-account/:uuid', async (req, res) => {
 
   // Create a new user in the database
   try {
-    const newUser = new User({ username, email, passwordHash });
+    const newUser = new User({ username, email, passwordHash, personalityRating: {totalRatings: 0, average: 0} });
     await newUser.save();
     tempUsers.delete(uuid);
     res.status(200).json({ message: 'Account created successfully' });
